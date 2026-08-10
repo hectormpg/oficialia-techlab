@@ -1,0 +1,13 @@
+.vs/
+**/bin/
+**/obj/
+**/AppPackages/
+**/publish/
+*.appx
+*.appxbundle
+*.msix
+*.msixbundle
+*.cer
+*.pfx
+*.user
+*.suo

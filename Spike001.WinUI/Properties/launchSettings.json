@@ -1,0 +1,10 @@
+{
+  "profiles": {
+  "Spike001.WinUI (Package)": {
+      "commandName": "MsixPackage"
+    },
+  "Spike001.WinUI (Unpackaged)": {
+      "commandName": "Project"
+    }
+  }
+}
