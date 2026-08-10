@@ -208,3 +208,84 @@ Hipótesis validada: Sí
 Evidencia suficiente: Sí
 Riesgo residual: Medio
 Recomendación: Continuar
+
+# SPIKE-001C — Configuration Framework
+
+## Objetivo
+
+Validar una arquitectura de configuración fuertemente tipada, desacoplada y preparada para evolución, con persistencia local en `settings.json`, sin SQLite ni hosting.
+
+## Diseño
+
+La configuración se modela como `AppSettings` inmutable mediante records y propiedades `init`, con `ConfigurationVersion` y los submodelos de aplicación, apariencia, institución, correspondencia, numeración, OCR y diagnóstico. Los consumidores reciben un snapshot mediante `IConfigurationService.Current` y proponen cambios mediante un nuevo `AppSettings`; no pueden modificar libremente la instancia actual en sitio.
+
+`SettingsSerializer` encapsula `System.Text.Json`. `SettingsValidator` valida valores y versión sin lanzar excepciones por errores esperados. `ConfigurationResult` separa `Errors`, `Warnings` e `Information`, y cada mensaje identifica si proviene de validación, serialización, sistema de archivos o servicio.
+
+## Servicios
+
+- `IConfigurationService`: expone `Current`, `Load`, `Save`, `Export` e `Import`.
+- `ConfigurationService`: coordina validación, serialización, lectura y escritura atómica.
+- `SettingsSerializer`: único componente que conoce el formato JSON.
+- `SettingsValidator`: valida la configuración tipada y `ConfigurationVersion = 1`.
+
+## Modelo
+
+`AppSettings` contiene `ApplicationSettings`, `AppearanceSettings`, `InstitutionSettings`, `CorrespondenceSettings`, `NumberingSettings`, `OcrSettings` y `DiagnosticSettings`. No se utilizan diccionarios ni claves de configuración libres.
+
+## Validación
+
+Se ejecutó un arnés temporal fuera del producto contra el código de `Core/Configuration`:
+
+- crear configuración por defecto: correcto;
+- guardar `settings.json`: correcto;
+- cargar: correcto;
+- modificar una copia tipada: correcto;
+- guardar nuevamente y recargar: correcto;
+- confirmar persistencia de institución y estado de primer arranque: correcto;
+- exportar e importar: correcto;
+- importar JSON inválido: devuelve `InvalidJson`, conserva `Current` y no realiza ninguna escritura durante el rechazo.
+
+El arnés temporal y sus artefactos fueron retirados después de la prueba; no forman parte del árbol final.
+
+## Correcciones SPIKE-001C-CLOSE
+
+- `ConfigurationService.Save` ahora realiza la limpieza del archivo temporal como operación best-effort: cualquier excepción de `File.Delete` queda contenida y no sustituye el resultado principal de `Save`. `Current` continúa actualizándose únicamente después de una escritura y reemplazo exitosos.
+- Se agregó `ConfigurationIssueCode.ValidationSucceeded` y `SettingsValidator` lo utiliza para informar `"La configuración pasó la validación tipada."`; `ConfigurationLoaded` queda reservado para cargas exitosas.
+
+Los valores `Prefix = "OF"`, `DefaultResponseDays = 5`, `RequireRecipient = true` y los demás valores por defecto son exclusivamente valores sintéticos del TechLab para validar el framework. No representan decisiones funcionales para Oficialía de Partes.
+
+La revalidación de SPIKE-001C-CLOSE cubrió defaults, `Save`, `Load`, modificación inmutable, guardado y recarga, `Export`, `Import` y JSON inválido. Todos los casos pasaron. El build Debug x64 finalizó con código `0`, `0` errores y `2` advertencias NU1603 en `4.89 s`.
+
+## Persistencia
+
+La ruta predeterminada es `%LocalAppData%\OficialiaTechLab\settings.json`; las pruebas usaron una ruta temporal explícita. `Save` valida y serializa antes de tocar el destino, escribe en un archivo temporal exclusivo con UTF-8 sin BOM y `WriteThrough`, fuerza el flush del stream y después reemplaza el destino existente o mueve el temporal al destino nuevo. El temporal se elimina en `finally` si permanece.
+
+Los errores de JSON o validación se devuelven en `ConfigurationResult` y no modifican `_current` ni escriben. Los fallos de lectura y escritura se devuelven separadamente como `FileReadFailed` o `FileWriteFailed`. Un JSON inválido no se sobrescribe ni provoca pérdida del archivo original.
+
+`Export` prepara una representación JSON en memoria e `Import` valida primero y sólo actualiza el snapshot en memoria; guardar es explícito.
+
+## Riesgos
+
+- La escritura atómica depende de que el sistema de archivos permita reemplazo/movimiento en la ruta configurada.
+- No se implementaron migraciones; `ConfigurationVersion` sólo prepara el contrato futuro.
+- La configuración aún no está integrada con ViewModels ni UI, conforme al alcance.
+- NU1603 de Windows App SDK continúa presente y no se modificó.
+
+## Build
+
+- Comando: `dotnet build Spike001.WinUI.sln --configuration Debug --property:Platform=x64 --nologo`.
+- Código de salida: `0`.
+- Errores: `0`.
+- Advertencias: `2` emisiones de NU1603; Microsoft.WindowsAppSDK `2.1.3` se resolvió frente a la versión solicitada por la plantilla.
+- Tiempo aproximado: `5.26 s` medidos por el comando; MSBuild reportó `5.06 s`.
+- Salida: `Spike001.WinUI/bin/x64/Debug/net10.0-windows10.0.19041.0/win-x64`.
+- Tamaño de salida Debug: `119,572,834 bytes` (`114.03 MiB`), `238` archivos.
+
+## Conclusión
+
+La configuración tipada, la validación separada y la persistencia segura son viables sin introducir hosting, SQLite ni frameworks adicionales. El resultado es un candidato para integración posterior; todavía no constituye una decisión definitiva sobre la arquitectura completa del producto.
+
+Hipótesis validada: Sí
+Evidencia suficiente: Sí
+Riesgo residual: Medio
+Recomendación: Continuar
